@@ -1,0 +1,20 @@
+{
+  "name": "api-performance-suite",
+  "version": "1.0.0",
+  "description": "API test suite (Playwright request fixture) and load tests (K6) against a public REST API.",
+  "type": "module",
+  "scripts": {
+    "test:api": "playwright test",
+    "report": "playwright show-report",
+    "perf:smoke": "k6 run k6/smoke.js",
+    "perf:load": "k6 run k6/load.js"
+  },
+  "keywords": ["qa", "api-testing", "performance", "k6", "playwright", "load-testing"],
+  "author": "Gabriele Scano",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.7.0",
+    "typescript": "^5.6.0"
+  }
+}
