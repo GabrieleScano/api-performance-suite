@@ -7,7 +7,8 @@
     "test:api": "playwright test",
     "report": "playwright show-report",
     "perf:smoke": "k6 run k6/smoke.js",
-    "perf:load": "k6 run k6/load.js"
+    "perf:load": "k6 run k6/load.js",
+    "perf:spike": "k6 run k6/spike.js"
   },
   "keywords": ["qa", "api-testing", "performance", "k6", "playwright", "load-testing"],
   "author": "Gabriele Scano",
