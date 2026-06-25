@@ -37,3 +37,37 @@ jobs:
       - name: Run K6 smoke test
         uses: grafana/setup-k6-action@v1
       - run: k6 run k6/smoke.js
+
+  # Publish the Playwright HTML report to GitHub Pages (main only) so it can be
+  # linked as a live report from the portfolio.
+  deploy-report:
+    name: Publish test report
+    needs: api-tests
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Download report artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: api-report
+          path: playwright-report
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: playwright-report
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
