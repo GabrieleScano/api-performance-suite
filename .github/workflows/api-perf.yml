@@ -46,6 +46,8 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
+      contents: read
+      actions: read # required by download-artifact
       pages: write
       id-token: write
     concurrency:
