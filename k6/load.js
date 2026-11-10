@@ -1,6 +1,7 @@
 import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import { Trend } from 'k6/metrics';
+import { BASE_URL, byTarget } from './lib/target.js';
 
 /**
  * Load test: ramps virtual users up and down to observe how response
@@ -17,13 +18,11 @@ export const options = {
   ],
   thresholds: {
     http_req_failed: ['rate<0.05'], // <5% errors under load
-    http_req_duration: ['p(95)<1500'],
-    create_booking_duration: ['p(95)<2000'],
+    // Container in CI: provisional, recalibrate from the trend history.
+    http_req_duration: [byTarget({ local: 'p(95)<250', remote: 'p(95)<1500' })],
+    create_booking_duration: [byTarget({ local: 'p(95)<300', remote: 'p(95)<2000' })],
   },
 };
-
-// CI points this at the local Docker container; defaults to the public sandbox.
-const BASE_URL = __ENV.BASE_URL || 'https://restful-booker.herokuapp.com';
 
 const payload = JSON.stringify({
   firstname: 'Load',

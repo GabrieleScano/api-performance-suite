@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { BASE_URL, byTarget } from './lib/target.js';
 
 /**
  * Spike test: a sudden surge of virtual users to see how the API copes
@@ -16,12 +17,9 @@ export const options = {
   thresholds: {
     // Under a spike we tolerate more errors/latency, but still bound them.
     http_req_failed: ['rate<0.10'],
-    http_req_duration: ['p(95)<2500'],
+    http_req_duration: [byTarget({ local: 'p(95)<500', remote: 'p(95)<2500' })],
   },
 };
-
-// CI points this at the local Docker container; defaults to the public sandbox.
-const BASE_URL = __ENV.BASE_URL || 'https://restful-booker.herokuapp.com';
 
 export default function () {
   const res = http.get(`${BASE_URL}/booking`);

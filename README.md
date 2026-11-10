@@ -72,12 +72,16 @@ How it is enforced:
 - `load.js`: ramp-up → steady state → peak → ramp-down, with a custom `create_booking_duration` trend.
 - `spike.js`: an abrupt traffic burst and the recovery (run manually, not in CI).
 
-Thresholds (the run fails if one is breached; **they gate CI**):
+Thresholds (the run fails if one is breached; **they gate CI**). Latency limits depend on the target, which `k6/lib/target.js` picks from `BASE_URL`: the container answers in about 2 ms, the public sandbox in about 300 ms, so one set of limits could not serve both.
 
 | Metric | Smoke | Load | Spike |
 |--------|-------|------|-------|
-| Error rate | < 1% | < 5% | < 10% |
-| p95 latency | < 800 ms | < 1500 ms | < 2500 ms |
+| Error rate (any target) | < 1% | < 5% | < 10% |
+| p95 latency, **container** (CI) | < 100 ms | < 250 ms | < 500 ms |
+| p95 latency, public sandbox | < 800 ms | < 1500 ms | < 2500 ms |
+| `create_booking_duration` p95 (load) | | container < 300 ms · sandbox < 2000 ms | |
+
+The container limits are **provisional**. They leave a wide margin over the first runs (p95 of about 2 ms) to absorb runner variance while still catching a real regression. They will be tightened once the [trend history](https://gabrielescano.github.io/api-performance-suite/trends/) shows the normal range on GitHub-hosted runners.
 
 ## K6 history and trend page
 
@@ -105,7 +109,7 @@ redocly.yaml            # contract lint rules
 tests/contract.ts       # ajv-based validator: expectContract / validateResponse
 tests/api/              # live API specs + payload types
 tests/contract/         # offline breaking-change suite
-k6/                     # smoke, load and spike scripts
+k6/                     # smoke, load and spike scripts; lib/target.js picks URL + thresholds
 scripts/                # health check, K6 history recorder
 site/trends/            # static trend page (published to Pages)
 .github/workflows/      # CI: tests + K6 against the container, history, Pages
