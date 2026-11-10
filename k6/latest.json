@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-10T09:59:58.239Z",
+  "sha": "f4326c3",
+  "load": {
+    "p95": "2 ms",
+    "errorRate": "0.00%",
+    "rps": "22.1/s",
+    "status": "passing"
+  },
+  "smoke": {
+    "p95": "1 ms",
+    "errorRate": "0.00%",
+    "rps": "1.0/s",
+    "status": "passing"
+  }
+}
