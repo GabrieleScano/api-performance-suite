@@ -361,8 +361,13 @@
             fill: 'var(--critical)', stroke: 'var(--surface-1)', 'stroke-width': 2 }));
         }
       }
-      // Direct label at the end of the line (≤ 4 series), placed after de-colliding.
+      // Latest point marker: keeps a single-run history visible and anchors the label.
       const [li, lv] = pts.at(-1);
+      if (runs[li].tests[name]?.thresholdsOk !== false) {
+        svg.append(svgEl('circle', { cx: x(li), cy: y(lv * scale), r: 4, fill: color,
+          stroke: 'var(--surface-1)', 'stroke-width': 2 }));
+      }
+      // Direct label at the end of the line (≤ 4 series), placed after de-colliding.
       endLabels.push({ x: x(li) + 6, y: y(lv * scale) + 4, text: testNames.length > 1 ? name : metric.fmt(lv) });
     });
     // Push overlapping end labels apart (min 13px), keeping them inside the plot.
