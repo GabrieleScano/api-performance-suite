@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
+import { BASE_URL, byTarget } from './lib/target.js';
 
 /**
  * Smoke test: minimal load to confirm the system works under a
@@ -10,12 +11,10 @@ export const options = {
   duration: '30s',
   thresholds: {
     http_req_failed: ['rate<0.01'], // <1% errors
-    http_req_duration: ['p(95)<800'], // 95% under 800ms
+    // Container in CI: provisional, recalibrate from the trend history.
+    http_req_duration: [byTarget({ local: 'p(95)<100', remote: 'p(95)<800' })],
   },
 };
-
-// CI points this at the local Docker container; defaults to the public sandbox.
-const BASE_URL = __ENV.BASE_URL || 'https://restful-booker.herokuapp.com';
 
 export default function () {
   const res = http.get(`${BASE_URL}/booking`);
