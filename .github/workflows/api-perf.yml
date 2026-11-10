@@ -5,12 +5,29 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Daily run so the K6 trend keeps getting data points without pushes.
+    - cron: '17 6 * * *'
   workflow_dispatch:
+
+env:
+  # restful-booker runs as a service container in each job (official image).
+  # Pinned by digest for reproducible runs; bump deliberately.
+  BASE_URL: http://localhost:3001
+  # Keep this many runs in the trend history on the data branch.
+  HISTORY_KEEP: 200
 
 jobs:
   api-tests:
-    name: API tests
+    name: API & contract tests
     runs-on: ubuntu-latest
+    services:
+      restful-booker:
+        image: mwinteringham/restfulbooker@sha256:a87ae093264caf64cad2557256921cbdb1fec466d6356b5e140e3f060b904f04
+        ports: ['3001:3001']
+        options: >-
+          --health-cmd "curl -fsS http://localhost:3001/ping || exit 1"
+          --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,7 +37,11 @@ jobs:
       - run: npm ci
       - name: Type-check
         run: npx tsc --noEmit
-      - name: Run API tests
+      - name: Lint OpenAPI contract
+        run: npm run lint:contract
+      - name: Health check
+        run: scripts/wait-for-api.sh "$BASE_URL"
+      - name: Run API + contract tests
         run: npx playwright test
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
@@ -29,27 +50,50 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
-  performance-smoke:
-    name: K6 smoke test
+  performance:
+    name: K6 smoke & load
     runs-on: ubuntu-latest
+    services:
+      restful-booker:
+        image: mwinteringham/restfulbooker@sha256:a87ae093264caf64cad2557256921cbdb1fec466d6356b5e140e3f060b904f04
+        ports: ['3001:3001']
+        options: >-
+          --health-cmd "curl -fsS http://localhost:3001/ping || exit 1"
+          --health-interval 5s --health-timeout 3s --health-retries 20 --health-start-period 5s
     steps:
       - uses: actions/checkout@v4
-      - name: Run K6 smoke test
-        uses: grafana/setup-k6-action@v1
-      - run: k6 run k6/smoke.js
+      - uses: grafana/setup-k6-action@v1
+      - name: Health check
+        run: scripts/wait-for-api.sh "$BASE_URL"
+      # k6 does not create the export directory (and silently skips the file).
+      - run: mkdir -p results
+      # Thresholds are the gate: K6 exits non-zero when one is crossed, failing
+      # the job. The summary is still exported so the failure shows in the trend.
+      - name: K6 smoke
+        run: k6 run --summary-export=results/smoke.json k6/smoke.js
+      - name: K6 load
+        if: ${{ !cancelled() }}
+        run: k6 run --summary-export=results/load.json k6/load.js
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: k6-results
+          path: results/
+          retention-days: 30
 
-  # Publish the Playwright HTML report to GitHub Pages (main only) so it can be
-  # linked as a live report from the portfolio.
-  deploy-report:
-    name: Publish test report
-    needs: api-tests
-    if: github.ref == 'refs/heads/main'
+  # main only: append the K6 summaries to the history on the `data` branch,
+  # then publish the Playwright report (site root) and the trend page (/trends/).
+  publish:
+    name: Record history & publish Pages
+    needs: [api-tests, performance]
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      actions: read # required by download-artifact
+      contents: write # push to the data branch
+      actions: read # download-artifact
       pages: write
       id-token: write
+    # Serialises publishes, so pushes to the data branch never race.
     concurrency:
       group: pages
       cancel-in-progress: false
@@ -57,17 +101,59 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Download report artifact
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download K6 results
         uses: actions/download-artifact@v4
+        continue-on-error: true # perf job may have died before producing results
+        with:
+          name: k6-results
+          path: results
+      - name: Download Playwright report
+        uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
           name: api-report
-          path: playwright-report
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+          path: _site
+
+      - name: Check out data branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git fetch --depth=1 origin data:data 2>/dev/null; then
+            git worktree add data data
+          else
+            git worktree add --orphan -b data data
+          fi
+
+      - name: Append run to history
+        run: node scripts/record-k6-run.mjs --results results --history data/k6 --keep "$HISTORY_KEEP"
+
+      - name: Push history
+        working-directory: data
+        run: |
+          git add k6
+          if git diff --cached --quiet; then
+            echo "No history change."
+          else
+            git commit -m "k6: record run ${{ github.run_number }} (${GITHUB_SHA::7})"
+            git push origin data
+          fi
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site/trends
+          cp site/trends/index.html _site/trends/
+          cp data/k6/history.json data/k6/latest.json _site/trends/ 2>/dev/null || echo '{"schema":1,"runs":[]}' > _site/trends/history.json
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
-          path: playwright-report
+          path: _site
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

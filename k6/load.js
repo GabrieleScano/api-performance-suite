@@ -22,7 +22,8 @@ export const options = {
   },
 };
 
-const BASE_URL = 'https://restful-booker.herokuapp.com';
+// CI points this at the local Docker container; defaults to the public sandbox.
+const BASE_URL = __ENV.BASE_URL || 'https://restful-booker.herokuapp.com';
 
 const payload = JSON.stringify({
   firstname: 'Load',

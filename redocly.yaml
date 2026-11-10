@@ -1,0 +1,10 @@
+# Lint config for openapi.yaml (run: npm run lint:contract)
+extends:
+  - recommended
+rules:
+  # The first server is the CI Docker container, which really is localhost.
+  no-server-example.com: off
+  # Some operations genuinely have no 4xx (e.g. /auth answers 200 on bad
+  # credentials, POST /booking answers 500 on bad input). The contract
+  # documents real behaviour, so this rule does not apply.
+  operation-4xx-response: off
