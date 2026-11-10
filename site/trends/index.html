@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>K6 performance trends · api-performance-suite</title>
+<meta name="description" content="p95 latency, error rate and throughput of the K6 runs in CI, over the last N runs.">
+<style>
+  .viz-root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --good: #0ca30c;
+    --good-text: #006300;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface-1: #1a1a19;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --good-text: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --good-text: #0ca30c;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  .viz-root {
+    min-height: 100vh;
+    background: var(--page);
+    color: var(--text-primary);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 32px 20px 48px;
+  }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0; }
+  p { margin: 0; }
+  a { color: inherit; }
+  .lede { color: var(--text-secondary); max-width: 70ch; }
+  .meta { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 24px 0 16px; }
+  .controls .label { color: var(--text-secondary); margin-right: 4px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+  .seg button {
+    font: inherit; color: var(--text-secondary); background: none; border: 0; padding: 6px 12px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button[aria-pressed="true"] { color: var(--text-primary); font-weight: 600; background: var(--grid); }
+  .seg button:focus-visible { outline: 2px solid var(--series-1); outline-offset: -2px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile, .card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+  }
+  .tile .name { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; }
+  .tile dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 12px; margin: 10px 0 0; }
+  .tile dt { color: var(--text-muted); font-size: 12px; }
+  .tile dd { margin: 0; font-size: 18px; font-weight: 600; }
+  .key { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
+
+  .status { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; }
+  .status.ok { color: var(--good-text); }
+  .status.fail { color: var(--critical); }
+  .status svg { width: 12px; height: 12px; }
+
+  .charts { display: grid; gap: 12px; }
+  .card header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .card .sub { color: var(--text-muted); font-size: 12px; }
+  .legend { display: flex; gap: 14px; color: var(--text-secondary); font-size: 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .plot { position: relative; }
+  .plot svg { display: block; width: 100%; height: 220px; overflow: visible; }
+  .plot svg text { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .plot svg .direct { fill: var(--text-secondary); font-size: 11px; }
+  .plot .grid line { stroke: var(--grid); stroke-width: 1; }
+  .plot .baseline { stroke: var(--axis); stroke-width: 1; }
+  .plot .threshold { stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.9; }
+  .plot .series { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .plot .crosshair { stroke: var(--text-muted); stroke-width: 1; }
+  .plot .hit { fill: transparent; cursor: crosshair; }
+  .plot .hit:focus { outline: none; }
+  .plot .hit:focus-visible + .focus-ring { opacity: 1; }
+
+  .tooltip {
+    position: absolute; pointer-events: none; z-index: 2; min-width: 180px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); padding: 8px 10px; font-size: 12px; opacity: 0; transition: opacity 80ms;
+  }
+  .tooltip .when { color: var(--text-muted); margin-bottom: 4px; }
+  .tooltip .row { display: flex; align-items: center; gap: 8px; }
+  .tooltip .row strong { font-variant-numeric: tabular-nums; }
+  .tooltip .row .s { color: var(--text-secondary); }
+
+  .note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
+
+  details.table { margin-top: 16px; }
+  details.table summary { cursor: pointer; color: var(--text-secondary); padding: 4px 0; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { color: var(--text-secondary); font-weight: 600; }
+
+  .empty { padding: 32px; text-align: center; color: var(--text-secondary); }
+  footer { margin-top: 28px; color: var(--text-muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<main>
+  <h1>K6 performance trends</h1>
+  <p class="lede">
+    Every CI run of <a href="https://github.com/GabrieleScano/api-performance-suite">api-performance-suite</a>
+    runs K6 against restful-booker in a local Docker container and records its summary here.
+    Thresholds remain the CI gate; this page only shows how the numbers move between runs.
+  </p>
+  <p class="meta" id="meta">Loading history…</p>
+
+  <div class="controls" role="group" aria-label="Number of runs shown">
+    <span class="label">Last</span>
+    <span class="seg" id="range"></span>
+    <span class="label">runs</span>
+  </div>
+
+  <section class="tiles" id="tiles" aria-label="Latest run"></section>
+  <section class="charts" id="charts"></section>
+
+  <details class="table">
+    <summary>Show data table</summary>
+    <div class="table-wrap"><table id="table"></table></div>
+  </details>
+
+  <footer>
+    Data: <a href="history.json">history.json</a> (kept on the <code>data</code> branch) ·
+    <a href="../">Playwright API report</a> ·
+    Target API: <a href="https://github.com/mwinteringham/restful-booker">restful-booker</a>.
+  </footer>
+</main>
+</div>
+
+<script type="module">
+  const RANGES = [10, 30, 100];
+  // Colour follows the entity: each K6 script owns a fixed slot.
+  const SLOTS = { smoke: 'var(--series-1)', load: 'var(--series-2)', spike: 'var(--series-3)' };
+  const slotFor = (name, i) => SLOTS[name] ?? `var(--series-${(i % 3) + 1})`;
+
+  // Mirrors the thresholds in k6/*.js (http_req_duration / http_req_failed).
+  const METRICS = [
+    { key: 'p95', title: 'p95 latency', unit: 'ms', fmt: (v) => `${v.toFixed(v < 10 ? 1 : 0)} ms`,
+      thresholdFrom: (t) => t.thresholds.find((x) => x.metric === 'http_req_duration' && x.expr.startsWith('p(95)')) },
+    { key: 'errorRate', title: 'Error rate', unit: '%', scale: 100, fmt: (v) => `${(v * 100).toFixed(2)}%`,
+      thresholdFrom: (t) => t.thresholds.find((x) => x.metric === 'http_req_failed') },
+    { key: 'rps', title: 'Throughput', unit: 'req/s', fmt: (v) => `${v.toFixed(1)} req/s` },
+  ];
+
+  const $ = (sel) => document.querySelector(sel);
+  const el = (tag, attrs = {}, text) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text !== undefined) n.textContent = text;
+    return n;
+  };
+  const svgEl = (tag, attrs = {}) => {
+    const n = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    return n;
+  };
+  const dateFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const shortDate = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+
+  const ICON_OK = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 6.5l2.2 2.2L9.5 3.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const ICON_FAIL = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  function statusBadge(ok) {
+    const s = el('span', { class: `status ${ok ? 'ok' : 'fail'}` });
+    s.innerHTML = ok ? ICON_OK : ICON_FAIL; // static markup, no data
+    s.append(document.createTextNode(ok ? 'thresholds passed' : 'thresholds failed'));
+    return s;
+  }
+
+  const params = new URLSearchParams(location.search);
+  let n = Number(params.get('n')) || 30;
+
+  let data;
+  try {
+    const res = await fetch('history.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(String(res.status));
+    data = await res.json();
+  } catch {
+    data = { runs: [] };
+  }
+  const allRuns = (data.runs ?? []).filter((r) => r && r.tests);
+  const order = (name) => { const i = Object.keys(SLOTS).indexOf(name); return i === -1 ? 99 : i; };
+  const testNames = [...new Set(allRuns.flatMap((r) => Object.keys(r.tests)))]
+    .sort((a, b) => order(a) - order(b) || a.localeCompare(b));
+
+  function renderRange() {
+    const seg = $('#range');
+    seg.replaceChildren();
+    const options = [...new Set([...RANGES, n])].sort((a, b) => a - b);
+    for (const r of options) {
+      const b = el('button', { type: 'button', 'aria-pressed': String(r === n) }, String(r));
+      b.addEventListener('click', () => {
+        n = r;
+        params.set('n', String(r));
+        window.history.replaceState(null, '', `?${params}`);
+        render();
+      });
+      seg.append(b);
+    }
+  }
+
+  function renderTiles(runs) {
+    const tiles = $('#tiles');
+    tiles.replaceChildren();
+    const last = runs.at(-1);
+    if (!last) return;
+    testNames.forEach((name, i) => {
+      const t = last.tests[name];
+      if (!t) return;
+      const tile = el('article', { class: 'tile' });
+      const head = el('div', { class: 'name' });
+      const key = el('span', { class: 'key' });
+      key.style.background = slotFor(name, i);
+      head.append(key, el('span', {}, `${name} · latest run`));
+      const dl = el('dl');
+      for (const m of METRICS) {
+        dl.append(el('dt', {}, m.title), el('dd', {}, t[m.key] == null ? '–' : m.fmt(t[m.key])));
+      }
+      // Grid shows three titles over three values.
+      dl.replaceChildren(...dl.querySelectorAll('dt'), ...dl.querySelectorAll('dd'));
+      tile.append(head, dl, statusBadge(t.thresholdsOk));
+      tiles.append(tile);
+    });
+  }
+
+  /** Round tick step (1, 2, 2.5, 5 × 10^k) so that 4 steps cover v. */
+  function niceStep(v) {
+    if (!(v > 0)) return 0.25;
+    const raw = v / 4;
+    const p = 10 ** Math.floor(Math.log10(raw));
+    for (const s of [1, 2, 2.5, 5, 10]) if (s * p >= raw) return s * p;
+    return 10 * p;
+  }
+
+  function renderChart(metric, runs) {
+    const card = el('section', { class: 'card', 'aria-label': metric.title });
+    const header = el('header');
+    const titleWrap = el('div');
+    titleWrap.append(el('h2', {}, metric.title), el('p', { class: 'sub' }, `per run · ${metric.unit}`));
+    const legend = el('div', { class: 'legend' });
+    if (testNames.length > 1) {
+      testNames.forEach((name, i) => {
+        const s = el('span');
+        const k = el('span', { class: 'key' });
+        k.style.background = slotFor(name, i);
+        s.append(k, document.createTextNode(name));
+        legend.append(s);
+      });
+    }
+    header.append(titleWrap, legend);
+    card.append(header);
+
+    const plot = el('div', { class: 'plot' });
+    card.append(plot);
+    const W = 1000, H = 220, M = { t: 10, r: 56, b: 24, l: 52 };
+    const iw = W - M.l - M.r, ih = H - M.t - M.b;
+    const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img',
+      'aria-label': `${metric.title} over the last ${runs.length} runs` });
+    plot.append(svg);
+
+    const scale = metric.scale ?? 1;
+    const values = runs.flatMap((r) => testNames.map((t) => r.tests[t]?.[metric.key])).filter((v) => v != null);
+    const dataMax = Math.max(0, ...values) * scale;
+
+    // Threshold lines are drawn only when they fall near the data; otherwise noted below.
+    const thresholds = [];
+    if (metric.thresholdFrom) {
+      testNames.forEach((name, i) => {
+        const latest = [...runs].reverse().find((r) => r.tests[name])?.tests[name];
+        const th = latest && metric.thresholdFrom(latest);
+        const num = th && Number(th.expr.match(/[\d.]+$/)?.[0]);
+        if (num != null && Number.isFinite(num)) thresholds.push({ name, i, value: num * (metric.key === 'errorRate' ? 100 : 1), expr: th.expr });
+      });
+    }
+    const near = thresholds.filter((t) => t.value <= Math.max(dataMax, 1e-9) * 3);
+    const off = thresholds.filter((t) => !near.includes(t));
+    const step = niceStep(Math.max(dataMax, ...near.map((t) => t.value)) * 1.05);
+    const yMax = step * 4;
+
+    const x = (i) => M.l + (runs.length === 1 ? iw / 2 : (i / (runs.length - 1)) * iw);
+    const y = (v) => M.t + ih - (v / yMax) * ih;
+
+    const grid = svgEl('g', { class: 'grid' });
+    for (let k = 0; k <= 4; k++) {
+      const v = step * k;
+      if (k > 0) grid.append(svgEl('line', { x1: M.l, x2: W - M.r, y1: y(v), y2: y(v) }));
+      const label = svgEl('text', { x: M.l - 8, y: y(v) + 4, 'text-anchor': 'end' });
+      label.textContent = String(+v.toFixed(3));
+      grid.append(label);
+    }
+    svg.append(grid, svgEl('line', { class: 'baseline', x1: M.l, x2: W - M.r, y1: y(0), y2: y(0) }));
+
+    // X labels: first, middle, last run dates.
+    const ticks = [...new Set([0, Math.floor((runs.length - 1) / 2), runs.length - 1])];
+    for (const i of ticks) {
+      const t = svgEl('text', { x: x(i), y: H - 6, 'text-anchor': i === 0 && runs.length > 1 ? 'start' : i === runs.length - 1 && runs.length > 1 ? 'end' : 'middle' });
+      t.textContent = shortDate.format(new Date(runs[i].date));
+      svg.append(t);
+    }
+
+    const endLabels = [];
+    for (const t of near) {
+      const color = slotFor(t.name, t.i);
+      svg.append(svgEl('line', { class: 'threshold', x1: M.l, x2: W - M.r, y1: y(t.value), y2: y(t.value), stroke: color }));
+      endLabels.push({ x: W - M.r + 6, y: y(t.value) + 4, text: testNames.length > 1 ? `${t.name} limit` : 'limit' });
+    }
+
+    testNames.forEach((name, i) => {
+      const color = slotFor(name, i);
+      const pts = runs.map((r, idx) => [idx, r.tests[name]?.[metric.key]]).filter(([, v]) => v != null);
+      if (!pts.length) return;
+      const d = pts.map(([idx, v], k) => `${k ? 'L' : 'M'}${x(idx).toFixed(1)},${y(v * scale).toFixed(1)}`).join('');
+      svg.append(svgEl('path', { class: 'series', d, stroke: color, 'vector-effect': 'non-scaling-stroke' }));
+      // Failed-threshold runs get a marker (paired with the status label in tooltip/table).
+      for (const [idx] of pts) {
+        if (runs[idx].tests[name]?.thresholdsOk === false) {
+          svg.append(svgEl('circle', { cx: x(idx), cy: y(runs[idx].tests[name][metric.key] * scale), r: 4,
+            fill: 'var(--critical)', stroke: 'var(--surface-1)', 'stroke-width': 2 }));
+        }
+      }
+      // Direct label at the end of the line (≤ 4 series), placed after de-colliding.
+      const [li, lv] = pts.at(-1);
+      endLabels.push({ x: x(li) + 6, y: y(lv * scale) + 4, text: testNames.length > 1 ? name : metric.fmt(lv) });
+    });
+    // Push overlapping end labels apart (min 13px), keeping them inside the plot.
+    endLabels.sort((a, b) => a.y - b.y);
+    for (let k = 1; k < endLabels.length; k++) {
+      endLabels[k].y = Math.max(endLabels[k].y, endLabels[k - 1].y + 13);
+    }
+    const overflow = (endLabels.at(-1)?.y ?? 0) - (M.t + ih + 4);
+    if (overflow > 0) endLabels.forEach((l) => { l.y -= overflow; });
+    for (const l of endLabels) {
+      const t = svgEl('text', { class: 'direct', x: l.x, y: l.y });
+      t.textContent = l.text;
+      svg.append(t);
+    }
+
+    // Hover / focus layer: crosshair snaps to the nearest run.
+    const cross = svgEl('line', { class: 'crosshair', y1: M.t, y2: M.t + ih, opacity: 0 });
+    svg.append(cross);
+    const tip = el('div', { class: 'tooltip', role: 'status' });
+    plot.append(tip);
+    const hit = svgEl('rect', { class: 'hit', x: M.l - 12, y: 0, width: iw + 24, height: H, tabindex: 0,
+      'aria-label': `${metric.title}: use left and right arrow keys to read runs` });
+    svg.append(hit);
+    let cur = runs.length - 1;
+
+    function show(i) {
+      cur = Math.max(0, Math.min(runs.length - 1, i));
+      const r = runs[cur];
+      cross.setAttribute('x1', x(cur)); cross.setAttribute('x2', x(cur)); cross.setAttribute('opacity', 1);
+      tip.replaceChildren();
+      tip.append(el('div', { class: 'when' }, `#${r.runNumber ?? '–'} · ${dateFmt.format(new Date(r.date))}${r.sha ? ` · ${r.sha}` : ''}`));
+      testNames.forEach((name, k) => {
+        const t = r.tests[name];
+        const row = el('div', { class: 'row' });
+        const key = el('span', { class: 'key' });
+        key.style.background = slotFor(name, k);
+        row.append(key, el('strong', {}, t?.[metric.key] == null ? '–' : metric.fmt(t[metric.key])), el('span', { class: 's' }, name));
+        if (t && !t.thresholdsOk) row.append(statusBadge(false));
+        tip.append(row);
+      });
+      const box = plot.getBoundingClientRect();
+      const px = (x(cur) / W) * box.width;
+      tip.style.opacity = 1;
+      const tw = tip.offsetWidth;
+      tip.style.left = `${Math.min(Math.max(px + 12, 0), box.width - tw)}px`;
+      if (px + 12 + tw > box.width) tip.style.left = `${Math.max(px - tw - 12, 0)}px`;
+      tip.style.top = '8px';
+    }
+    function hide() { cross.setAttribute('opacity', 0); tip.style.opacity = 0; }
+    hit.addEventListener('pointermove', (e) => {
+      const box = svg.getBoundingClientRect();
+      const sx = ((e.clientX - box.left) / box.width) * W;
+      const i = runs.length === 1 ? 0 : Math.round(((sx - M.l) / iw) * (runs.length - 1));
+      show(i);
+    });
+    hit.addEventListener('pointerleave', hide);
+    hit.addEventListener('focus', () => show(cur));
+    hit.addEventListener('blur', hide);
+    hit.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') { show(cur - 1); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { show(cur + 1); e.preventDefault(); }
+    });
+    hit.addEventListener('click', () => { const u = runs[cur].runUrl; if (u) window.open(u, '_blank', 'noopener'); });
+
+    if (off.length) {
+      card.append(el('p', { class: 'note' },
+        `Off-scale thresholds: ${off.map((t) => `${t.name} ${t.expr}`).join(' · ')} — the runs sit far below them.`));
+    }
+    return card;
+  }
+
+  function renderTable(runs) {
+    const table = $('#table');
+    table.replaceChildren();
+    const thead = el('thead');
+    const hr = el('tr');
+    hr.append(el('th', {}, 'Run'), el('th', {}, 'Date'));
+    for (const name of testNames) for (const m of METRICS) hr.append(el('th', {}, `${name} ${m.title}`));
+    for (const name of testNames) hr.append(el('th', {}, `${name} status`));
+    thead.append(hr);
+    const tbody = el('tbody');
+    for (const r of [...runs].reverse()) {
+      const tr = el('tr');
+      const runCell = el('td');
+      if (r.runUrl) runCell.append(el('a', { href: r.runUrl }, `#${r.runNumber}`)); else runCell.textContent = '–';
+      tr.append(runCell, el('td', {}, dateFmt.format(new Date(r.date))));
+      for (const name of testNames) for (const m of METRICS) {
+        const v = r.tests[name]?.[m.key];
+        tr.append(el('td', {}, v == null ? '–' : m.fmt(v)));
+      }
+      for (const name of testNames) {
+        const td = el('td');
+        const t = r.tests[name];
+        if (t) td.append(statusBadge(t.thresholdsOk)); else td.textContent = '–';
+        tr.append(td);
+      }
+      tbody.append(tr);
+    }
+    table.append(thead, tbody);
+  }
+
+  function render() {
+    const runs = allRuns.slice(-n);
+    renderRange();
+    const charts = $('#charts');
+    charts.replaceChildren();
+    if (!runs.length) {
+      $('#meta').textContent = 'No runs recorded yet.';
+      charts.append(el('div', { class: 'card empty' }, 'History is empty — it fills up after the first CI run on main.'));
+      $('#tiles').replaceChildren();
+      $('#table').replaceChildren();
+      return;
+    }
+    const failed = runs.filter((r) => Object.values(r.tests).some((t) => !t.thresholdsOk)).length;
+    $('#meta').textContent =
+      `Showing ${runs.length} of ${allRuns.length} recorded runs · last updated ${dateFmt.format(new Date(runs.at(-1).date))}` +
+      ` · ${failed} with failed thresholds`;
+    renderTiles(runs);
+    for (const m of METRICS) charts.append(renderChart(m, runs));
+    renderTable(runs);
+  }
+
+  render();
+  let resizeTimer;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 150); });
+</script>
+</body>
+</html>

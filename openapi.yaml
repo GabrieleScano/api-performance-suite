@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: restful-booker (unofficial contract)
+  version: 1.0.0
+  summary: Unofficial OpenAPI description of restful-booker, written for this test suite.
+  description: |
+    restful-booker is a third-party, open-source practice API
+    (https://github.com/mwinteringham/restful-booker). It does not publish an
+    official OpenAPI document; this one is **derived by hand** from the official
+    apidoc (https://restful-booker.herokuapp.com/apidoc/index.html) and then
+    corrected against the API's observed behaviour.
+
+    Where the apidoc and the running service disagree, this contract follows
+    the service and records the difference under `x-apidoc-discrepancy`.
+
+    Only the JSON representation is described (the API also speaks XML and
+    url-encoded forms, which this suite does not exercise).
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: http://localhost:3001
+    description: Local Docker container used in CI (mwinteringham/restfulbooker)
+  - url: https://restful-booker.herokuapp.com
+    description: Public shared sandbox
+
+tags:
+  - name: Ping
+    description: Liveness.
+  - name: Auth
+    description: Token issuance for write operations.
+  - name: Booking
+    description: Booking CRUD and search.
+
+# Reads and token issuance are public; writes override this per operation.
+security: []
+
+paths:
+  /ping:
+    get:
+      tags: [Ping]
+      operationId: healthCheck
+      summary: Health check
+      responses:
+        '201':
+          description: Service is up.
+          x-apidoc-discrepancy: apidoc documents 200 OK; the service answers 201 Created.
+          content:
+            text/plain:
+              schema: { type: string, const: Created }
+
+  /auth:
+    post:
+      tags: [Auth]
+      operationId: createToken
+      summary: Create an auth token for write operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthRequest' }
+      responses:
+        '200':
+          description: |
+            A token for valid credentials, otherwise a `reason`.
+            The service answers 200 in both cases.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AuthToken'
+                  - $ref: '#/components/schemas/AuthFailure'
+
+  /booking:
+    get:
+      tags: [Booking]
+      operationId: getBookingIds
+      summary: List booking ids, optionally filtered
+      parameters:
+        - { name: firstname, in: query, schema: { type: string } }
+        - { name: lastname, in: query, schema: { type: string } }
+        - { name: checkin, in: query, schema: { type: string, format: date } }
+        - { name: checkout, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: Array of booking ids.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BookingId' }
+    post:
+      tags: [Booking]
+      operationId: createBooking
+      summary: Create a booking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Booking' }
+      responses:
+        '200':
+          description: The created booking with its id.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateBookingResponse' }
+        '500':
+          description: Invalid payload (the service does not return a 400).
+          content:
+            text/plain:
+              schema: { type: string }
+
+  /booking/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [Booking]
+      operationId: getBooking
+      summary: Get a booking
+      responses:
+        '200':
+          description: The booking.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Booking]
+      operationId: updateBooking
+      summary: Replace a booking
+      security: [{ tokenCookie: [] }, { basicAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Booking' }
+      responses:
+        '200':
+          description: The updated booking.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags: [Booking]
+      operationId: partialUpdateBooking
+      summary: Partially update a booking
+      security: [{ tokenCookie: [] }, { basicAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookingPatch' }
+      responses:
+        '200':
+          description: The full booking after the update.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Booking' }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Booking]
+      operationId: deleteBooking
+      summary: Delete a booking
+      security: [{ tokenCookie: [] }, { basicAuth: [] }]
+      responses:
+        '201':
+          description: Deleted.
+          x-apidoc-discrepancy: apidoc documents 200 OK; the service answers 201 Created.
+          content:
+            text/plain:
+              schema: { type: string, const: Created }
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    tokenCookie:
+      type: apiKey
+      in: cookie
+      name: token
+      description: Token obtained from POST /auth.
+    basicAuth:
+      type: http
+      scheme: basic
+
+  responses:
+    NotFound:
+      description: No booking with that id.
+      content:
+        text/plain:
+          schema: { type: string, const: Not Found }
+    Forbidden:
+      description: Missing or invalid credentials.
+      content:
+        text/plain:
+          schema: { type: string, const: Forbidden }
+
+  schemas:
+    AuthRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+
+    AuthToken:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string, minLength: 1 }
+
+    AuthFailure:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, examples: [Bad credentials] }
+        token: false
+
+    BookingId:
+      type: object
+      required: [bookingid]
+      properties:
+        bookingid: { type: integer, minimum: 1 }
+
+    BookingDates:
+      type: object
+      required: [checkin, checkout]
+      properties:
+        checkin: { type: string, format: date }
+        checkout: { type: string, format: date }
+
+    Booking:
+      type: object
+      required: [firstname, lastname, totalprice, depositpaid, bookingdates]
+      properties:
+        firstname: { type: string }
+        lastname: { type: string }
+        totalprice:
+          type: integer
+          description: The service truncates decimals (1.5 is stored as 1).
+          x-apidoc-discrepancy: apidoc says Number; values are always integers.
+        depositpaid: { type: boolean }
+        bookingdates: { $ref: '#/components/schemas/BookingDates' }
+        additionalneeds:
+          type: string
+          description: Omitted from responses when not supplied on create.
+          x-apidoc-discrepancy: apidoc lists it as always returned; it is optional.
+
+    BookingPatch:
+      type: object
+      minProperties: 1
+      properties:
+        firstname: { type: string }
+        lastname: { type: string }
+        totalprice: { type: integer }
+        depositpaid: { type: boolean }
+        bookingdates: { $ref: '#/components/schemas/BookingDates' }
+        additionalneeds: { type: string }
+
+    CreateBookingResponse:
+      type: object
+      required: [bookingid, booking]
+      properties:
+        bookingid: { type: integer, minimum: 1 }
+        booking: { $ref: '#/components/schemas/Booking' }
