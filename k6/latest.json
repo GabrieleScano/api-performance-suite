@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-15T13:57:24.472Z",
+  "date": "2026-11-16T15:42:52.498Z",
   "sha": "ac7b86a",
   "load": {
     "p95": "1 ms",
@@ -8,7 +8,7 @@
     "status": "passing"
   },
   "smoke": {
-    "p95": "2 ms",
+    "p95": "1 ms",
     "errorRate": "0.00%",
     "rps": "1.0/s",
     "status": "passing"
