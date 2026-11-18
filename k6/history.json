@@ -560,7 +560,63 @@
           ]
         }
       }
+    },
+    {
+      "runId": 44337466891,
+      "runNumber": 20,
+      "runUrl": "https://github.com/GabrieleScano/api-performance-suite/actions/runs/44337466891",
+      "sha": "ac7b86a",
+      "event": "schedule",
+      "date": "2026-11-18T15:39:45.614Z",
+      "target": "http://localhost:3001",
+      "tests": {
+        "load": {
+          "p95": 1.31,
+          "avg": 0.82,
+          "errorRate": 0,
+          "rps": 22.045,
+          "requests": 3316,
+          "thresholdsOk": true,
+          "thresholds": [
+            {
+              "metric": "create_booking_duration",
+              "expr": "p(95)<300",
+              "ok": true
+            },
+            {
+              "metric": "http_req_failed",
+              "expr": "rate<0.05",
+              "ok": true
+            },
+            {
+              "metric": "http_req_duration",
+              "expr": "p(95)<250",
+              "ok": true
+            }
+          ]
+        },
+        "smoke": {
+          "p95": 1.58,
+          "avg": 1.27,
+          "errorRate": 0,
+          "rps": 0.998,
+          "requests": 30,
+          "thresholdsOk": true,
+          "thresholds": [
+            {
+              "metric": "http_req_duration",
+              "expr": "p(95)<100",
+              "ok": true
+            },
+            {
+              "metric": "http_req_failed",
+              "expr": "rate<0.01",
+              "ok": true
+            }
+          ]
+        }
+      }
     }
   ],
-  "updated": "2026-11-17T16:00:45.109Z"
+  "updated": "2026-11-18T15:39:45.614Z"
 }

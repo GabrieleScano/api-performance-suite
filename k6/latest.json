@@ -1,14 +1,14 @@
 {
-  "date": "2026-11-17T16:00:45.109Z",
+  "date": "2026-11-18T15:39:45.614Z",
   "sha": "ac7b86a",
   "load": {
     "p95": "1 ms",
     "errorRate": "0.00%",
-    "rps": "22.1/s",
+    "rps": "22.0/s",
     "status": "passing"
   },
   "smoke": {
-    "p95": "1 ms",
+    "p95": "2 ms",
     "errorRate": "0.00%",
     "rps": "1.0/s",
     "status": "passing"
